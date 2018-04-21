@@ -14,6 +14,8 @@ let stationStatusLastUpdated = null;
 let stationHourFrame = null;
 let shouldResetFrame = false;
 
+let weather = null;
+
 const s3 = new AWS.S3();
 
 function writeHourFrame(json, key) {
@@ -24,6 +26,27 @@ function writeHourFrame(json, key) {
       console.log(`Successfully uploaded data to ${AWSBucket}/${key}`);
     }
   });
+}
+
+function fetchWeather(callback) {
+  request("http://api.wunderground.com/api/31440e9800c534a0/conditions/q/CA/San_Francisco.json", (err, resp) => {
+    if (err) {
+      console.error(err);
+      return;
+    }
+    const observation = JSON.parse(resp.body).current_observation;
+    weather = {
+      weather: observation.weather,
+      temp: observation.temp_f,
+      feelslike: observation.feelslike_f,
+      humditity: observation.relative_humidity,
+      wind: observation.wind_string,
+      precip: observation.precip_1hr_in,
+      icon: observation.icon,
+    }
+  })
+  console.log("Weather data refreshed")
+  if (callback) { callback() }
 }
 
 function fetchStationInfo(callback) {
@@ -114,11 +137,13 @@ function fetchStatus() {
 
       // if this is the initial state of the system, set it and return
       if (!stationStatus) {
+        console.log("Initializing first frame")
         stationStatus = nextStationStatus;
         stationStatusLastUpdated = nextLastUpdated;
         stationHourFrame = {
           timestamp: nextLastUpdated,
           keyframe: nextStationStatus,
+          weather: weather,
           events: []
         };
         last24.push(stationHourFrame);
@@ -144,6 +169,7 @@ function fetchStatus() {
         stationHourFrame = {
           timestamp: nextLastUpdated,
           keyframe: nextStationStatus,
+          weather: weather,
           events: []
         };
 
@@ -225,6 +251,7 @@ fetchStationInfo(() => {
 
 const hourMs = 60 * 60 * 1000;
 
+// roll frame hourly
 function rollHourFrame() {
   shouldResetFrame = true;
   setTimeout(rollHourFrame, hourMs);
@@ -233,3 +260,7 @@ function rollHourFrame() {
 const msToNextHour = hourMs - Math.abs((Date.now() - 1524124800000) % hourMs);
 console.log(`Will roll first frame in ${Math.round(msToNextHour / (60 * 1000))}min`)
 setTimeout(rollHourFrame, msToNextHour);
+
+// fetch weather hourly
+fetchWeather()
+setTimeout(fetchWeather, hourMs);
