@@ -12,7 +12,7 @@ let stationInfo = null;
 let stationStatus = null;
 let stationStatusLastUpdated = null;
 let stationHourFrame = null;
-let shouldResetFrame = true;
+let shouldResetFrame = false;
 
 const s3 = new AWS.S3();
 
@@ -103,7 +103,12 @@ function fetchStatus() {
       }
 
       const { nextStationStatus, nextLastUpdated } = parseStatusResponse(resp.body);
-      if (!nextStationStatus || stationStatusLastUpdated === nextLastUpdated) {
+      if (!nextStationStatus) {
+        console.error("station status could not be parsed")
+        return;
+      }
+      if (stationStatusLastUpdated === nextLastUpdated) {
+        console.error("station status timestamp is the same")
         return;
       }
 
@@ -158,8 +163,7 @@ function eventsBetween(last, next, time) {
   for (let ii = 0; ii < last.length; ii++) {
     const lastStation = last[ii];
     const nextStation = next[ii];
-    const dockChange =
-      nextStation.num_docks_available - lastStation.num_docks_available;
+    const dockChange = nextStation.docks - lastStation.docks;
 
     if (dockChange < 0) {
       for (let x = 0; x < -dockChange; x++) {
