@@ -2,7 +2,7 @@ var Server = require("simple-websocket/server");
 const request = require("request");
 const fs = require("fs");
 const AWS = require("aws-sdk");
-const AWSBucket = 'sfbike';
+const AWSBucket = "sfbike";
 
 AWS.config.loadFromPath("./config.json");
 
@@ -19,34 +19,42 @@ let weather = null;
 const s3 = new AWS.S3();
 
 function writeHourFrame(json, key) {
-  s3.putObject({ Bucket: AWSBucket, Key: key, Body: JSON.stringify(json) }, (err, data) => {
-    if (err) {
-      console.log(err);
-    } else {
-      console.log(`Successfully uploaded data to ${AWSBucket}/${key}`);
+  s3.putObject(
+    { Bucket: AWSBucket, Key: key, Body: JSON.stringify(json) },
+    (err, data) => {
+      if (err) {
+        console.log(err);
+      } else {
+        console.log(`Successfully uploaded data to ${AWSBucket}/${key}`);
+      }
     }
-  });
+  );
 }
 
 function fetchWeather(callback) {
-  request("http://api.wunderground.com/api/31440e9800c534a0/conditions/q/CA/San_Francisco.json", (err, resp) => {
-    if (err) {
-      console.error(err);
-      return;
+  request(
+    "http://api.wunderground.com/api/31440e9800c534a0/conditions/q/CA/San_Francisco.json",
+    (err, resp) => {
+      if (err) {
+        console.error(err);
+        return;
+      }
+      const observation = JSON.parse(resp.body).current_observation;
+      weather = {
+        weather: observation.weather,
+        temp: observation.temp_f,
+        feelslike: observation.feelslike_f,
+        humditity: observation.relative_humidity,
+        wind_mph: observation.wind_mph,
+        precip: observation.precip_1hr_in,
+        icon: observation.icon
+      };
+      console.log(`Weather data refreshed: ${JSON.stringify(weather)}`);
+      if (callback) {
+        callback();
+      }
     }
-    const observation = JSON.parse(resp.body).current_observation;
-    weather = {
-      weather: observation.weather,
-      temp: observation.temp_f,
-      feelslike: observation.feelslike_f,
-      humditity: observation.relative_humidity,
-      wind: observation.wind_string,
-      precip: observation.precip_1hr_in,
-      icon: observation.icon,
-    }
-  })
-  console.log("Weather data refreshed")
-  if (callback) { callback() }
+  );
 }
 
 function fetchStationInfo(callback) {
@@ -60,8 +68,8 @@ function fetchStationInfo(callback) {
       try {
         stationInfo = JSON.parse(resp.body).data.stations;
         for (const station of stationInfo) {
-          station.id = station.station_id
-          delete station.station_id
+          station.id = station.station_id;
+          delete station.station_id;
         }
       } catch (err) {
         console.error(err);
@@ -90,30 +98,32 @@ function parseStatusResponse(text) {
   // rename some keys in the json and remove some keys that we don't care for.
   // reduces the storage size of one station status update by 60%!
   for (const station of nextStationStatus) {
-    delete station.eightd_has_available_keys
-    station.id = station.station_id
-    delete station.station_id
-    station.ts = station.last_reported
-    delete station.last_reported
+    delete station.eightd_has_available_keys;
+    station.id = station.station_id;
+    delete station.station_id;
+    station.ts = station.last_reported;
+    delete station.last_reported;
 
     // remove num_ and _available parts of keys
     for (const key of Object.keys(station)) {
-      const shortened = key.replace('num_', '').replace('_available', '')
+      const shortened = key.replace("num_", "").replace("_available", "");
       if (key !== shortened) {
-        station[shortened] = station[key]
-        delete station[key]
+        station[shortened] = station[key];
+        delete station[key];
       }
     }
 
     // switch is_installed, etc. to negative bools and keep them only when necessary
     // is_returning = 1 goes away, is_returning = 0 becomes not_returning = 1
-    for (const key of ['is_installed', 'is_renting', 'is_returning']) {
-      if (station[key] === 0) { station[key.replace('is_', 'not_')] = 1 }
+    for (const key of ["is_installed", "is_renting", "is_returning"]) {
+      if (station[key] === 0) {
+        station[key.replace("is_", "not_")] = 1;
+      }
       delete station[key];
     }
   }
 
-  return { nextLastUpdated, nextStationStatus }
+  return { nextLastUpdated, nextStationStatus };
 }
 
 function fetchStatus() {
@@ -125,19 +135,21 @@ function fetchStatus() {
         return;
       }
 
-      const { nextStationStatus, nextLastUpdated } = parseStatusResponse(resp.body);
+      const { nextStationStatus, nextLastUpdated } = parseStatusResponse(
+        resp.body
+      );
       if (!nextStationStatus) {
-        console.error("station status could not be parsed")
+        console.error("station status could not be parsed");
         return;
       }
       if (stationStatusLastUpdated === nextLastUpdated) {
-        console.error("station status timestamp is the same")
+        console.error("station status timestamp is the same");
         return;
       }
 
       // if this is the initial state of the system, set it and return
       if (!stationStatus) {
-        console.log("Initializing first frame")
+        console.log("Initializing first frame");
         stationStatus = nextStationStatus;
         stationStatusLastUpdated = nextLastUpdated;
         stationHourFrame = {
@@ -163,8 +175,14 @@ function fetchStatus() {
       // if a new recording frame should be started, write the old one to S3 and open a new one
       if (shouldResetFrame) {
         shouldResetFrame = false;
-        const date = new Date(stationHourFrame.timestamp * 1000)
-        writeHourFrame(stationHourFrame, `${date.toISOString().split(':').shift()}.json`)
+        const date = new Date(stationHourFrame.timestamp * 1000);
+        writeHourFrame(
+          stationHourFrame,
+          `${date
+            .toISOString()
+            .split(":")
+            .shift()}.json`
+        );
 
         stationHourFrame = {
           timestamp: nextLastUpdated,
@@ -231,7 +249,7 @@ fetchStationInfo(() => {
 
   const server = new Server({ port: 5005 });
 
-  server.on("connection", function (socket) {
+  server.on("connection", function(socket) {
     connections.push(socket);
 
     socket.write(
@@ -258,9 +276,11 @@ function rollHourFrame() {
 }
 
 const msToNextHour = hourMs - Math.abs((Date.now() - 1524124800000) % hourMs);
-console.log(`Will roll first frame in ${Math.round(msToNextHour / (60 * 1000))}min`)
+console.log(
+  `Will roll first frame in ${Math.round(msToNextHour / (60 * 1000))}min`
+);
 setTimeout(rollHourFrame, msToNextHour);
 
 // fetch weather hourly
-fetchWeather()
+fetchWeather();
 setTimeout(fetchWeather, hourMs);
