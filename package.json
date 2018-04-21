@@ -1,0 +1,26 @@
+{
+  "name": "sfbike-realtime",
+  "version": "1.0.0",
+  "description": "",
+  "main": "analyze.js",
+  "dependencies": {
+    "aws-sdk": "^2.226.1",
+    "request": "^2.85.0",
+    "rx-lite": "^4.0.8",
+    "simple-websocket": "^7.0.2"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bengotow/bikeviz.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/bengotow/bikeviz/issues"
+  },
+  "homepage": "https://github.com/bengotow/bikeviz#readme"
+}
