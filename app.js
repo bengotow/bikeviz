@@ -36,6 +36,10 @@ function fetchStationInfo(callback) {
       }
       try {
         stationInfo = JSON.parse(resp.body).data.stations;
+        for (const station of stationInfo) {
+          station.id = station.station_id
+          delete station.station_id
+        }
       } catch (err) {
         console.error(err);
         return;
@@ -215,10 +219,13 @@ fetchStationInfo(() => {
   });
 });
 
+const hourMs = 60 * 60 * 1000;
+
 function rollHourFrame() {
   shouldResetFrame = true;
-  setTimeout(rollHourFrame, 60 * 60 * 1000);
+  setTimeout(rollHourFrame, hourMs);
 }
 
-const msToNextHour = Math.abs((Date.now() - 1524124800000) % (60 * 60 * 1000));
+const msToNextHour = hourMs - Math.abs((Date.now() - 1524124800000) % hourMs);
+console.log(`Will roll first frame in ${Math.round(msToNextHour / (60 * 1000))}min`)
 setTimeout(rollHourFrame, msToNextHour);

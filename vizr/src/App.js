@@ -152,7 +152,7 @@ class Map extends Component {
   };
 
   displayEvent = ({ t, sid }) => {
-    const { lat, lon } = this.props.stationInfo.find(s => s.station_id === sid);
+    const { lat, lon } = this.props.stationInfo.find(s => s.id === sid);
 
     var el = document.createElement("div");
     el.className = "marker " + t;
@@ -191,7 +191,7 @@ class App extends Component {
   }
 
   componentDidMount() {
-    let socket = new SimpleWebsocket("ws://localhost:5005");
+    let socket = new SimpleWebsocket("ws://34.216.74.81:5005");
     socket.on("connect", () => {
       socket.send("sup!");
     });
