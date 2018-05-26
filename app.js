@@ -291,7 +291,7 @@ fetchStationInfo(() => {
 
 // fetch weather every 30 min
 fetchWeather()
-setTimeout(fetchWeather, 30 * 60 * 1000)
+setInterval(fetchWeather, 30 * 60 * 1000)
 
 // fetch last 24 hours of frames
 getRecentFrames()
