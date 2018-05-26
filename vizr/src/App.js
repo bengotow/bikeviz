@@ -9,16 +9,40 @@ mapboxgl.accessToken =
   "pk.eyJ1IjoiYmVuZ29vdHciLCJhIjoiY2pkejFjZGZyMG1mejJ3czk4eDNxODh0NSJ9.8f_aIRuc0MC_8T33befK-Q";
 
 class TimelineData {
-  constructor({ keyframe, timestamp, events }) {
+  constructor({ keyframe, timestamp, weather }) {
     this.keyframe = keyframe;
     this.start = timestamp;
-    this.timestamp = timestamp;
-    this.events = events;
+    this.events = []
+    this.weather = [weather];
+
+    this._totalBikes = 0;
+    this._startOutBikes = 0;
+    this._currentOutBikes = 0;
+
+    keyframe.forEach(station => {
+      this._totalBikes += station.bikes
+    })
   }
 
-  appending({ timestamp, events }) {
+  appending({ timestamp, events, weather }) {
     this.timestamp = timestamp;
     this.events = [].concat(this.events, events);
+
+    if (weather) {
+      this.weather.push(weather)
+    }
+    events.forEach(e => {
+      if (e.t === 'start') { this._currentOutBikes += 1 }
+      if (e.t === 'end') { this._currentOutBikes -= 1 }
+
+      if (this._currentOutBikes < 0) {
+        this._currentOutBikes = 0;
+        this._startOutBikes += 1;
+        this._totalBikes += 1;
+      }
+    })
+
+    
     return this;
   }
 }
@@ -33,7 +57,7 @@ class Timeline extends Component {
     const unixRight = Date.now() / 1000;
     const unixLeft = unixRight - 24 * 60 * 60;
 
-    const { start, events } = this.props.data;
+    const { start, events, weather, _startOutBikes, _totalBikes } = this.props.data;
     const { width, height } = ReactDOM.findDOMNode(
       this
     ).getBoundingClientRect();
@@ -52,52 +76,65 @@ class Timeline extends Component {
     this._ctx.fillRect(0, 0, missingX, height);
 
     // draw buckets Xpx wide in the region we have
-    const pxWidth = 5;
+    const pxWidth = 2;
+    const windows = [];
+    for (let px = missingX; px < width; px += pxWidth) {
+      const unix = unixLeft + px / pxPerUnix;
+      windows.push({unix, px, events: events.filter(e => e.ts >= unix && e.ts < unix + pxWidth / pxPerUnix)})
+    }
 
     const aggregate = ({ each, then }) => {
       let max = 0;
       let min = 1000000;
-      const values = {};
-      for (let px = missingX; px < width; px += pxWidth) {
-        const val = each(unixLeft + px / pxPerUnix);
-        max = Math.max(max, val);
-        min = Math.min(min, val);
-        values[px] = val;
-      }
+      const values = windows.map((window) =>
+        Object.assign({}, window, {value: each(window)})
+      );
+      values.forEach(({value}) => {
+        max = Math.max(max, value);
+        min = Math.min(min, value);
+      })
       then({ max, min, values });
     };
 
+    let outbikes = _startOutBikes;
+    this._ctx.moveTo(0, 0);
+    this._ctx.strokeStyle = "blue";
+    this._ctx.beginPath();
     aggregate({
-      each: unix =>
-        events.filter(e => e.ts >= unix && e.ts < unix + pxWidth / pxPerUnix)
-          .length,
+      each: ({unix, events}) => {
+        events.forEach(e => outbikes += e.t === 'start' ? 1 : -1)
+        return outbikes
+      },
       then: ({ min, max, values }) => {
-        this._ctx.fillStyle = "red";
-        for (let px = missingX; px < width; px += pxWidth) {
-          if (values[px] > 0) {
-            const h = values[px] * height / max;
-            this._ctx.fillRect(px, height - h, pxWidth, h);
-          }
+        for (const {value, px} of values) {
+          this._ctx.lineTo(px, height - value * height / max * 0.85);
         }
-      }
-    });
+      }})
+      this._ctx.stroke();
 
     // draw hour markers
     this._ctx.fillStyle = "black";
     this._ctx.strokeStyle = "rgba(0,0,0,0.17)";
 
     this._ctx.beginPath();
-    for (let hr = 0; hr < 24; hr++) {
-      const x = pxPerUnix * hr * 60 * 60
+    for (let hr = 0; hr < 25; hr++) {
+      const unix = start - start % (60 * 60) + hr * 60 * 60
+      const x = pxPerUnix * (unix - unixLeft)
       this._ctx.moveTo(x, 26);
       this._ctx.lineTo(x, height);
       this._ctx.font = '14px serif';
       this._ctx.textAlign = hr === 0 ? 'left' : 'center';
 
-      const text = `-${24 - hr} hr`
-      this._ctx.fillText(text, x, 18);
+      const d = (new Date(unix * 1000));
+      const h = d.getHours();
+      this._ctx.fillText(h > 12 ? `${h-12}PM` : `${h}AM`, x, 18);
     }
     this._ctx.stroke();
+
+    // draw weather
+    for (const w of weather) {
+      console.log(w)
+    }
   }
 
   render() {
@@ -115,8 +152,8 @@ class Map extends Component {
     this._map = new mapboxgl.Map({
       container: ReactDOM.findDOMNode(this),
       style: "mapbox://styles/bengootw/cjdz85rzb411g2rmq0rukfhsz",
-      center: [-122.447303, 37.753574],
-      zoom: 12
+      center: [-122.347303, 37.803574],
+      zoom: 11.5
     });
     this.ensureStations();
   }
@@ -185,7 +222,7 @@ class App extends Component {
     super(props);
 
     this.state = {
-      data: new TimelineData({}),
+      data: null,
       stationInfo: null
     };
   }
@@ -202,15 +239,16 @@ class App extends Component {
         this.setState({ stationInfo });
       }
       if (msg === "frame") {
-        const { events, timestamp, keyframe } = data;
-        for (const e of events) {
-          this._map.displayEvent(e);
+        const { events, timestamp, keyframe, weather } = data;
+        
+        if (!keyframe) {
+          for (const e of events) {
+            this._map.displayEvent(e);
+          }
         }
-        if (keyframe) {
-          this.setState({ data: new TimelineData({ events, timestamp, keyframe }) })
-        } else {
-          this.setState({ data: this.state.data.appending({ events, timestamp }) })
-        }
+
+        const timeline = this.state.data || new TimelineData({ timestamp, keyframe })
+        this.setState({ data: timeline.appending({ events, timestamp, weather }) })
       }
     });
   }
@@ -218,6 +256,9 @@ class App extends Component {
   render() {
     const { stationInfo, data } = this.state;
 
+    if (data === null) {
+      return <span/>
+    }
     return (
       <div style={{ display: "flex", flexDirection: "column" }}>
         <Map ref={c => (this._map = c)} stationInfo={stationInfo} />
@@ -225,6 +266,8 @@ class App extends Component {
         <div className="overlay">
           <div className="time">
             {new Date(data.timestamp * 1000).toLocaleString()}
+            <br/>
+            {data._currentOutBikes} / {data._totalBikes}
           </div>
         </div>
       </div>
