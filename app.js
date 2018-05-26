@@ -5,7 +5,7 @@ const AWSBucket = 'sfbike'
 
 AWS.config.loadFromPath('./config.json')
 
-let last24 = []
+let lastWeek = []
 
 let stationInfo = null
 let stationStatus = null
@@ -15,6 +15,37 @@ let stationHourFrame = null
 let weather = null
 
 const s3 = new AWS.S3()
+
+async function getRecentFrames() {
+  for (let ii = 1; ii <= 24 * 7; ii++) {
+    lastWeek.unshift(await getHourFrame(new Date(Date.now() - ii * 60 * 60 * 1000)))
+  }
+
+  console.log(lastWeek.map(l => l.timestamp))
+}
+
+function getHourFrame(date) {
+  return new Promise(resolve => {
+    const key = `${date
+      .toISOString()
+      .split(':')
+      .shift()}.json`
+    console.log(key)
+
+    s3.getObject({ Bucket: AWSBucket, Key: key }, (err, data) => {
+      if (data) {
+        resolve(JSON.parse(data.Body.data || data.Body))
+      } else {
+        resolve({
+          timestamp: Math.round(date.getTime() / 1000),
+          keyframe: [],
+          weather: {},
+          events: [],
+        })
+      }
+    })
+  })
+}
 
 function writeHourFrame(json, key) {
   s3.putObject({ Bucket: AWSBucket, Key: key, Body: JSON.stringify(json) }, (err, data) => {
@@ -147,7 +178,7 @@ function fetchStatus() {
         weather: weather,
         events: [],
       }
-      last24.push(stationHourFrame)
+      lastWeek.push(stationHourFrame)
       return
     }
 
@@ -177,9 +208,9 @@ function fetchStatus() {
         events: [],
       }
 
-      last24.push(stationHourFrame)
-      if (last24.length > 24) {
-        last24.shift()
+      lastWeek.push(stationHourFrame)
+      if (lastWeek.length > 24 * 7) {
+        lastWeek.shift()
       }
     }
 
@@ -246,7 +277,7 @@ fetchStationInfo(() => {
     connections.push(socket)
 
     socket.write(JSON.stringify({ msg: 'station-info', data: { stationInfo } }))
-    last24.forEach(data => {
+    lastWeek.forEach(data => {
       socket.write(JSON.stringify({ msg: 'frame', data }))
     })
     socket.on('error', () => {
@@ -261,3 +292,6 @@ fetchStationInfo(() => {
 // fetch weather every 30 min
 fetchWeather()
 setTimeout(fetchWeather, 30 * 60 * 1000)
+
+// fetch last 24 hours of frames
+getRecentFrames()
